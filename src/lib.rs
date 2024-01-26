@@ -82,6 +82,33 @@ where
 /// The peripheral should implement the [`embedded_hal::blocking::serial::Write`] trait. If your HAL
 /// already has the non-blocking [`Write`](embedded_hal::serial::Write) implemented, it can opt-in
 /// to the [default implementation](embedded_hal::blocking::serial::write::Default).
+#[cfg(feature = "embedded_io")]
+pub fn defmt_serial(serial: impl embedded_io::Write + 'static) {
+    let mut serial = core::mem::ManuallyDrop::new(serial);
+
+    let wfn = move |a: SFn| {
+        match a {
+            SFn::Buf(buf) => {
+                for b in buf {
+                    serial.write_all(&b.to_ne_bytes()).ok();
+                }
+            }
+            SFn::Flush => {
+                serial.flush().ok();
+            }
+        };
+    };
+
+    let trampoline = get_trampoline(&wfn);
+
+    unsafe {
+        let token = critical_section::acquire();
+        WRITEFN = Some(trampoline);
+        critical_section::release(token);
+    }
+}
+
+#[cfg(not(feature = "embedded_io"))]
 pub fn defmt_serial(serial: impl embedded_hal::blocking::serial::Write<u8> + 'static) {
     let mut serial = core::mem::ManuallyDrop::new(serial);
 
